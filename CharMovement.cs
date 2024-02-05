@@ -8,6 +8,7 @@ public class CharMovement : MonoBehaviour
     [SerializeField]
     private Animator _animator;
     private Transform _render;
+    private PlayerVfxManager _vfx;
     private Rigidbody2D _rigidbody;
     private DrippyInput _input;
     private float _moveVector;
@@ -25,9 +26,13 @@ public class CharMovement : MonoBehaviour
     [Header("Jump Variables")]
     public float jumpForce = 3;
     public float jumpControlModifier = 0.5f;
+    public float doubleJumpControlModifier = 0.5f;
     public float walkHorizontalMultiplyer = 1;
     public float runHorizontalMultiplyer = 1;
+    public float airMoveMaxSpeed = 5f;
     public float landingPause = 0.2f;
+    private bool canDoubleJump = false;
+    private float airControlModifier;
 
     [Header("Ground Cast Variables")]
     public Vector2 groundBoxSize;
@@ -43,6 +48,7 @@ public class CharMovement : MonoBehaviour
     {
         _rigidbody = this.GetComponent<Rigidbody2D>();
         _render = transform.GetChild(0);
+        _vfx = GetComponentInChildren<PlayerVfxManager>();
         _input = new DrippyInput();
         _input.gameplay.Jump.performed += OnJump;
     }
@@ -90,7 +96,7 @@ public class CharMovement : MonoBehaviour
 
     private void OnAirMove(float _v)
     {
-        _rigidbody.velocity = new Vector2(_rigidbody.velocity.x + (_v * jumpControlModifier/10), _rigidbody.velocity.y);
+        _rigidbody.velocity = new Vector2(Mathf.Clamp(_rigidbody.velocity.x + (_v * airControlModifier/10), -airMoveMaxSpeed, airMoveMaxSpeed), _rigidbody.velocity.y);
     }
 
     private void OnJump(InputAction.CallbackContext context)
@@ -104,14 +110,32 @@ public class CharMovement : MonoBehaviour
             
             justJumped = true;
         }
+        else
+        {
+            if(canDoubleJump)
+            {
+                _animator.Play("doubleJump");
+                _vfx.SpawnEffect("doubleJump", true);
+
+                canDoubleJump = false;
+                airControlModifier = doubleJumpControlModifier;
+                _rigidbody.velocity = new Vector2(_rigidbody.velocity.x, 0); //stop the fall
+
+                float _multi = _isSprinting ? runHorizontalMultiplyer : walkHorizontalMultiplyer;
+                _rigidbody.AddForce(new Vector2(_rigidbody.velocity.x * _multi, jumpForce), ForceMode2D.Impulse);
+            }
+        }
     }
 
     private void IsGrounded()
     {
-        if(_rigidbody.velocity.y <= 0 && Physics2D.BoxCast(transform.position, groundBoxSize, 0, -transform.up, groundCastDistance, groundLayer))
+        if(IsFalling() && Physics2D.BoxCast(transform.position, groundBoxSize, 0, -transform.up, groundCastDistance, groundLayer))
         {
             _animator.SetBool("isGrounded", true);
             isGrounded = true;
+
+            airControlModifier = jumpControlModifier;
+            canDoubleJump = true;
 
             if(justJumped)
             {
@@ -133,6 +157,11 @@ public class CharMovement : MonoBehaviour
                 isGrounded = false;
             }
         }
+    }
+
+    private bool IsFalling()
+    {
+        return _rigidbody.velocity.y <= 0;
     }
 
     private IEnumerator WaitForLandingPause()
